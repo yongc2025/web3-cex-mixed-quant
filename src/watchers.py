@@ -43,29 +43,22 @@ class SolanaRaydiumWatcher(IWatcher):
         wss_endpoints = config.get("solana.wss_endpoints", ["wss://api.mainnet-beta.solana.com"])
         proxy = config.get("app.proxy")
         current_wss = wss_endpoints[0]
-        
-        # 解析代理
-        proxy_host = None
-        proxy_port = None
-        if proxy:
-            try:
-                # 假设格式为 http://127.0.0.1:10808
-                parts = proxy.replace("http://", "").replace("https://", "").split(":")
-                proxy_host = parts[0]
-                proxy_port = int(parts[1])
-            except:
-                pass
 
         while self.is_running:
             try:
                 print(f"[DEBUG] 正在连接 WSS: {current_wss} (代理: {proxy if proxy else '无'})")
                 
-                # 特别修复：对于 Windows 环境下的 websockets 代理支持
-                # 如果有代理，我们尝试配合系统环境变量使用
+                # websockets 11+ 支持 proxy 参数，DNS 也走代理
+                ws_kwargs = {
+                    "open_timeout": 10,
+                    "ping_interval": 20,
+                }
+                if proxy:
+                    ws_kwargs["proxy"] = proxy
+                
                 async with websockets.connect(
                     current_wss,
-                    open_timeout=10,
-                    ping_interval=20
+                    **ws_kwargs
                 ) as websocket:
                     subscribe_msg = {
                         "jsonrpc": "2.0", "id": 1, "method": "logsSubscribe",
