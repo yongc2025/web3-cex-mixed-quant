@@ -1,6 +1,6 @@
 import asyncio
 import json
-import websockets
+import aiohttp
 from typing import Optional
 from .interfaces import IWatcher
 from .models import StandardizedSignal, ChainType, SignalType, TokenInfo, SecurityInfo
@@ -48,33 +48,35 @@ class SolanaRaydiumWatcher(IWatcher):
             try:
                 print(f"[DEBUG] 正在连接 WSS: {current_wss} (代理: {proxy if proxy else '无'})")
                 
-                # websockets 11+ 支持 proxy 参数，DNS 也走代理
-                ws_kwargs = {
-                    "open_timeout": 10,
-                    "ping_interval": 20,
-                }
+                # aiohttp WebSocket，复用 ProxyConnector
+                connector = None
                 if proxy:
-                    ws_kwargs["proxy"] = proxy
+                    from aiohttp_socks import ProxyConnector
+                    connector = ProxyConnector.from_url(proxy)
                 
-                async with websockets.connect(
-                    current_wss,
-                    **ws_kwargs
-                ) as websocket:
-                    subscribe_msg = {
-                        "jsonrpc": "2.0", "id": 1, "method": "logsSubscribe",
-                        "params": [
-                            {"mentions": [self.RAYDIUM_LP_V4]},
-                            {"commitment": "finalized"}
-                        ]
-                    }
-                    await websocket.send(json.dumps(subscribe_msg))
-                    print(f"[INFO] 成功订阅 Raydium 信号于 {current_wss}")
-                    
-                    async for message in websocket:
-                        data = json.loads(message)
-                        signature = data.get("params", {}).get("result", {}).get("value", {}).get("signature")
-                        if signature:
-                            asyncio.create_task(self._handle_new_pool(signature))
+                async with aiohttp.ClientSession(connector=connector) as session:
+                    async with session.ws_connect(
+                        current_wss,
+                        heartbeat=20
+                    ) as websocket:
+                        subscribe_msg = {
+                            "jsonrpc": "2.0", "id": 1, "method": "logsSubscribe",
+                            "params": [
+                                {"mentions": [self.RAYDIUM_LP_V4]},
+                                {"commitment": "finalized"}
+                            ]
+                        }
+                        await websocket.send_json(subscribe_msg)
+                        print(f"[INFO] 成功订阅 Raydium 信号于 {current_wss}")
+                        
+                        async for message in websocket:
+                            if message.type == aiohttp.WSMsgType.TEXT:
+                                data = json.loads(message.data)
+                                signature = data.get("params", {}).get("result", {}).get("value", {}).get("signature")
+                                if signature:
+                                    asyncio.create_task(self._handle_new_pool(signature))
+                            elif message.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
+                                break
             except Exception as e:
                 print(f"[ERROR] WSS 监听中断: {e}，5秒后尝试重连...")
                 await asyncio.sleep(5)
