@@ -115,22 +115,19 @@ class DiscordBotNotifier(INotifier, commands.Bot):
 
     async def start_bot(self):
         if self.token:
-            print(f"[INFO] 正在尝试通过强制代理登录 Discord Bot...")
+            print(f"[INFO] 正在尝试通过代理登录 Discord Bot...")
             proxy = config.get("app.proxy")
             try:
-                # 终极方案：直接修改 aiohttp 默认会话或通过环境变量强制设置
-                import os
                 if proxy:
-                    os.environ["HTTP_PROXY"] = proxy
-                    os.environ["HTTPS_PROXY"] = proxy
-                    os.environ["ALL_PROXY"] = proxy  # 增加全局代理标记
-                    print(f"[INFO] 环境变量已锁定: {proxy}")
-                
-                # discord.py 的 start 方法底层调用了 login 和 connect
-                # 我们需要在 connect 之前确保 aiohttp 识别到代理
-                await self.start(self.token)
+                    print(f"[INFO] 代理地址: {proxy}")
+                    # discord.py 2.x 支持 proxy 参数，直接传给 start()
+                    await self.start(self.token, proxy=proxy)
+                else:
+                    print("[WARN] 未配置代理，直连 Discord（国内可能失败）")
+                    await self.start(self.token)
             except Exception as e:
                 print(f"[ERROR] Discord Bot 登录失败: {e}")
-                print("[TIP] 如果依然超时，请检查代理软件是否开启且端口 10808 正确。")
+                if proxy:
+                    print(f"[TIP] 当前代理: {proxy}，请检查代理软件是否开启。")
         else:
             print("[WARN] Discord Token 为空，跳过启动")
