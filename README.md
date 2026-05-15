@@ -1,19 +1,41 @@
-# web3-cex-mixed-quant
+# .
 
-学习项目
+> 由 vibe-coding-cn 母机孵化，2026-05-15
 
-Web3链上+CEX混合量化策略工具 | 以太坊链上数据爬取、大额资金流向信号、链上+中心化交易所混合交易策略，ClickHouse时序数据存储 
-Web3 On-chain + CEX Mixed Quant Tool | Ethereum on-chain data crawl, capital flow signal, mixed trading strategy, ClickHouse time-series storage
+## 快速开始
 
-# Web3链上+CEX混合量化策略工具
-## 项目功能
-1. 对接以太坊节点，爬取链上大额转账/资金流向信号
-2. 融合CEX行情数据，实现链上信号驱动策略
-3. 支持币安/Coinbase多交易所API对接
-4. ClickHouse高效存储链上+CEX时序数据
-5. 策略实时信号告警
+1. 填写 `docs/PROJECT_BRIEF.md`（项目定义）
+2. 告诉 AI：「阅读 docs/PROJECT_BRIEF.md，然后开始开发」
 
-## 技术栈
-Python、Web3.py、ClickHouse、WebSocket、以太坊节点
-## 匹配岗位
-Web3量化工程师、区块链数据分析师、链上量化研究员
+## 项目结构
+
+```
+./
+├── .skills/              # AI 领域技能（12 个）
+├── .workflow/             # 自动开发工作流
+├── docs/
+│   ├── PROJECT_BRIEF.md   # 📝 项目定义（待填写）
+│   └── reference/         # 参考文档
+│       ├── principles/    # 核心理念 + 架构原则
+│       ├── case-studies/  # 真实项目案例
+│       ├── guides/        # 入门指南
+│       └── prompts/       # 编程提示词库
+├── src/                   # 源代码
+├── tests/                 # 测试
+└── scripts/               # 工具脚本
+```
+
+## 开发流程
+
+```
+需求分析 → 实施计划 → 分步实现 → 验证测试 → 迭代
+```
+
+参考：`.workflow/auto-dev-loop/`
+
+## 技能列表
+
+```bash
+ls .skills/
+python scripts/skill-picker.py --list
+```
