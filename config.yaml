@@ -13,7 +13,7 @@ solana:
 
 notifiers:
   wecom_webhook: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=e9f4afa6-3b7b-4a60-b52a-f0155dbe7a77"
-  discord_token: "MTUwNDc4MjczNDU5NjUwNTYwMA.GMHkzX.UoXye6iYsmKDtj4M3-j5tTib0_gXxu-2nvUy1w"
+  discord_token: ""
   discord_channel_id: ""
 
 app:
