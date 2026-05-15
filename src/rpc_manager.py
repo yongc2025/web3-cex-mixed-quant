@@ -1,17 +1,20 @@
 import httpx
 import asyncio
+import time
 from typing import List, Optional, Dict, Any
 from .config import config
 
 
 class RPCManager:
     """
-    RPC 节点管理器：优先用付费节点，失败自动降级到公共节点
+    RPC 节点管理器：付费优先 → 失败冷却 → 自动降级
     """
+    COOLDOWN_SECONDS = 30
+
     def __init__(self):
         self.nodes: List[str] = []
         self._initialized = False
-        self._current_idx = 0
+        self._cooldown: Dict[str, float] = {}
 
     def _ensure_loaded(self):
         if self._initialized:
@@ -20,34 +23,38 @@ class RPCManager:
             "https://api.mainnet-beta.solana.com",
             "https://rpc.ankr.com/solana"
         ]
-        # 付费节点排前面，公共节点排后面
         paid = [n for n in raw if "helius" in n or "quicknode" in n or "alchemy" in n]
         free = [n for n in raw if n not in paid]
         self.nodes = paid + free
         self._initialized = True
         print(f"[INFO] RPC 节点已加载: {len(self.nodes)} 个")
         for i, n in enumerate(self.nodes):
-            tag = "💰 付费" if i < len(paid) else "🆓 免费"
-            print(f"  [{i+1}] {tag}: {n[:60]}...")
+            tag = "💰" if i < len(paid) else "🆓"
+            print(f"  [{i+1}] {tag} {n[:60]}...")
 
-    def _get_node(self) -> str:
-        """顺序取节点：先用第一个（Helius），失败了切下一个"""
+    def _mark_failed(self, node: str):
+        self._cooldown[node] = time.time()
+
+    def _is_cooling(self, node: str) -> bool:
+        if node not in self._cooldown:
+            return False
+        if time.time() - self._cooldown[node] > self.COOLDOWN_SECONDS:
+            del self._cooldown[node]
+            return False
+        return True
+
+    def _pick_node(self) -> str:
         self._ensure_loaded()
-        node = self.nodes[self._current_idx % len(self.nodes)]
-        return node
-
-    def _rotate(self):
-        """切到下一个节点"""
-        self._current_idx += 1
-        if self._current_idx >= len(self.nodes):
-            self._current_idx = 0  # 全部失败就回到 Helius 重试
-        print(f"[RPC] 切换到节点 [{self._current_idx + 1}]: {self._get_node()[:50]}...")
+        for node in self.nodes:
+            if not self._is_cooling(node):
+                return node
+        return self.nodes[0]
 
     async def call_with_retry(self, method: str, params: List[Any], max_retries: int = 4) -> Optional[Dict[str, Any]]:
         self._ensure_loaded()
 
         for i in range(max_retries):
-            node_url = self._get_node()
+            node_url = self._pick_node()
             payload = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
             try:
                 proxy = config.get("app.proxy")
@@ -56,26 +63,33 @@ class RPCManager:
                     if response.status_code == 200:
                         res_json = response.json()
                         if "result" in res_json:
-                            if i > 0:
-                                print(f"[RPC] ✅ 请求成功: {node_url[:50]} (重试 {i} 次)")
                             return res_json["result"]
                         elif "error" in res_json:
-                            err_msg = res_json["error"].get("message", "unknown")
-                            print(f"[RPC] ❌ {node_url[:40]}: {err_msg}")
+                            print(f"[RPC] ❌ {node_url[:40]}: {res_json['error'].get('message', '')}")
                     elif response.status_code == 403:
                         print(f"[RPC] 🚫 被拒绝: {node_url[:40]}")
+                        self._mark_failed(node_url)
                     elif response.status_code == 429:
                         print(f"[RPC] ⏳ 限流: {node_url[:40]}")
+                        self._mark_failed(node_url)
                     else:
                         print(f"[RPC] ❓ HTTP {response.status_code}: {node_url[:40]}")
+            except httpx.ConnectError as e:
+                print(f"[RPC] 💥 连接拒绝: {node_url[:40]}: {e}")
+                self._mark_failed(node_url)
+            except httpx.TimeoutException:
+                print(f"[RPC] ⏰ 超时: {node_url[:40]}")
+                self._mark_failed(node_url)
+            except httpx.ProxyError as e:
+                print(f"[RPC] 🔒 代理错误: {node_url[:40]}: {e}")
+                self._mark_failed(node_url)
             except Exception as e:
-                print(f"[RPC] 💥 连接失败 ({node_url[:40]}): {e}")
+                print(f"[RPC] 💥 {type(e).__name__}: {node_url[:40]}: {e}")
+                self._mark_failed(node_url)
 
-            # 失败了，切下一个节点
-            self._rotate()
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.3)
 
-        print(f"[RPC] ⚠️ 所有节点都失败，放弃: {method}")
+        print(f"[RPC] ⚠️ 全部失败: {method}")
         return None
 
 
