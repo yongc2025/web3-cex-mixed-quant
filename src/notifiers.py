@@ -121,33 +121,12 @@ class DiscordBotNotifier(INotifier, commands.Bot):
             try:
                 if proxy:
                     print(f"[INFO] 代理地址: {proxy}")
-                    import aiohttp
+                    from aiohttp_socks import ProxyConnector
                     
-                    # 用代理创建 connector，DNS 也走代理
-                    if proxy.startswith("socks"):
-                        from aiohttp_socks import ProxyConnector
-                        connector = ProxyConnector.from_url(proxy)
-                    else:
-                        # HTTP 代理：用 ProxyConnector 或手动设置
-                        try:
-                            from aiohttp_socks import ProxyConnector
-                            connector = ProxyConnector.from_url(proxy)
-                        except:
-                            connector = aiohttp.TCPConnector()
-                    
-                    # 劫持 discord.py 内部 session 创建
-                    original_init = type(self.http).__init__
-                    session_ref = [None]
-                    
-                    _proxy = proxy
-                    _connector = connector
-                    
-                    def patched_init(this, *args, **kwargs):
-                        original_init(this, *args, **kwargs)
-                        # 替换 session 为带代理的版本
-                        this._HTTPClient__session = aiohttp.ClientSession(connector=_connector)
-                    
-                    type(self.http).__init__ = patched_init
+                    # discord.py 2.7.1 在 static_login() 中检查 self.connector
+                    # 设置为 ProxyConnector 后，DNS 也走代理
+                    self.http.connector = ProxyConnector.from_url(proxy)
+                    print(f"[INFO] 代理 Connector 已注入")
                 
                 await self.start(self.token)
             except Exception as e:
