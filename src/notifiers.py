@@ -120,11 +120,10 @@ class DiscordBotNotifier(INotifier, commands.Bot):
             try:
                 if proxy:
                     print(f"[INFO] 代理地址: {proxy}")
-                    # discord.py 2.x 支持 proxy 参数，直接传给 start()
-                    await self.start(self.token, proxy=proxy)
-                else:
-                    print("[WARN] 未配置代理，直连 Discord（国内可能失败）")
-                    await self.start(self.token)
+                    # discord.py 内部 http client 有 _proxy 属性
+                    self.http._proxy = proxy
+                
+                await self.start(self.token)
             except Exception as e:
                 print(f"[ERROR] Discord Bot 登录失败: {e}")
                 if proxy:
