@@ -85,7 +85,7 @@ class SolanaRaydiumWatcher(IWatcher):
         """
         深度解析事务并串联过滤、存储与推送
         """
-        print(f"New Raydium Pool Detected! Fetching details for sig: {signature[:10]}...")
+        print(f"[DEBUG] 处理新池信号: {signature[:16]}...")
         
         await asyncio.sleep(2)
         
@@ -94,22 +94,28 @@ class SolanaRaydiumWatcher(IWatcher):
             [signature, {"encoding": "json", "maxSupportedTransactionVersion": 0}]
         )
 
-        if not tx_data: return
+        if not tx_data:
+            print(f"[SKIP] RPC 返回空数据: {signature[:16]}")
+            return
 
         # 资深专家逻辑：从交易指令中提取代币地址
-        # Raydium Initialize2 交易通常在 accountKeys 中包含 Mint A 和 Mint B
         account_keys = tx_data.get("transaction", {}).get("message", {}).get("accountKeys", [])
-        if len(account_keys) < 10: return
+        if len(account_keys) < 10:
+            print(f"[SKIP] accountKeys 不足 10 个 ({len(account_keys)}): {signature[:16]}")
+            return
 
         # 简单启发式搜索：寻找非 WSOL 的代币地址作为目标
         token_address = ""
         for key in account_keys:
             if key != self.WSOL_ADDRESS and key not in [self.RAYDIUM_LP_V4, "11111111111111111111111111111111"]:
-                # 排除系统合约，剩下的第一个大概率是新币
                 token_address = key
                 break
         
-        if not token_address: return
+        if not token_address:
+            print(f"[SKIP] 未找到目标代币: {signature[:16]}")
+            return
+
+        print(f"[INFO] 发现代币: {token_address[:16]}... 开始审计")
 
         # 1. 自动审计
         security_report = await self.security_checker.get_full_security_report(token_address)
@@ -129,10 +135,12 @@ class SolanaRaydiumWatcher(IWatcher):
 
         # 3. 过滤逻辑
         if self.engine and not await self.engine.run(signal):
-            print(f"Signal for {token_address[:8]} filtered out.")
+            print(f"[FILTER] 信号被过滤: {token_address[:16]}")
             return
 
         # 4. 存储与推送
+        print(f"[NOTIFY] 正在推送信号: {token_address[:16]}")
         if self.db: await self.db.save_signal(signal)
         for notifier in self.notifiers:
             await notifier.notify(signal)
+        print(f"[DONE] 推送完成: {token_address[:16]}")

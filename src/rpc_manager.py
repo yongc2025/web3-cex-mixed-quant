@@ -36,7 +36,9 @@ class RPCManager:
                 "params": params
             }
             try:
-                async with httpx.AsyncClient(timeout=10.0) as client:
+                # 走代理发起 RPC 请求
+                proxy = config.get("app.proxy")
+                async with httpx.AsyncClient(timeout=10.0, proxy=proxy) as client:
                     response = await client.post(node_url, json=payload)
                     if response.status_code == 200:
                         res_json = response.json()
