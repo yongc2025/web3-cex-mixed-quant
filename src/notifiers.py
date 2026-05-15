@@ -6,10 +6,9 @@ from .interfaces import INotifier
 from .models import StandardizedSignal
 from .config import config
 
+
 class WeComNotifier(INotifier):
-    """
-    企业微信 Webhook 推送中间件
-    """
+    """企业微信 Webhook 推送"""
     def __init__(self):
         self.webhook_url = config.get("notifiers.wecom.webhook_url")
 
@@ -18,9 +17,7 @@ class WeComNotifier(INotifier):
             print("WeCom Webhook URL not configured, skipping...")
             return
 
-        # 格式化消息内容 (资深专家推荐：Markdown 格式提高可读性)
         title = "🚀 **发现潜在优质土狗项目**" if signal.security.lp_burned else "⚠️ **新池检测 (未扣底)**"
-        
         content = (
             f"{title}\n\n"
             f"> **Chain**: {signal.chain.value.upper()}\n"
@@ -34,52 +31,42 @@ class WeComNotifier(INotifier):
             f"- LP Burned: {'✅' if signal.security.lp_burned else '❌'}\n\n"
             f"[查看链接](https://dexscreener.com/solana/{signal.token.address})"
         )
-
-        payload = {
-            "msgtype": "markdown",
-            "markdown": {
-                "content": content
-            }
-        }
+        payload = {"msgtype": "markdown", "markdown": {"content": content}}
 
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.post(self.webhook_url, json=payload)
+                response = await client.post(self.webhook_url, json=payload, timeout=10)
                 if response.status_code == 200:
-                    print(f"Successfully sent WeCom notification for {signal.token.symbol}")
+                    print(f"[OK] WeCom 推送成功: {signal.token.symbol}")
                 else:
-                    print(f"Failed to send WeCom notification: {response.text}")
+                    print(f"[ERROR] WeCom 推送失败: {response.text}")
         except Exception as e:
-            print(f"Error sending WeCom notification: {str(e)}")
+            print(f"[ERROR] WeCom 推送异常: {e}")
+
 
 class DiscordBotNotifier(INotifier, commands.Bot):
-    """
-    Discord 机器人中间件：支持推送与状态查询
-    """
+    """Discord 机器人：推送 + 命令交互"""
     def __init__(self):
         intents = discord.Intents.default()
         intents.message_content = True
-        
-        # 优先读 discord.bot_token，兼容 discord_token
+
         token = config.get("notifiers.discord.bot_token") or config.get("notifiers.discord_token")
         print(f"[DEBUG] Discord 模块初始化，Token 存在: {bool(token)}")
-        
+
         commands.Bot.__init__(self, command_prefix="!", intents=intents)
         self.channel_id = config.get("notifiers.discord.channel_id") or config.get("notifiers.discord_channel_id")
         self.token = token
         self._proxy_url = config.get("app.proxy")
         self.start_time = asyncio.get_event_loop().time()
 
-        # 注册事件
         @self.event
         async def on_ready():
             print(f"[INFO] ✅ Discord Bot 已连接: {self.user.name} ({self.user.id})")
 
-        # 注册指令
         @self.command(name="status")
         async def _status(ctx):
             uptime = asyncio.get_event_loop().time() - self.start_time
-            await ctx.send(f"🤖 **系统运行状态**:\n- 持续启动时间: {uptime:.2f}s\n- 当前监听链: Solana\n- 过滤器配置: `{config.get('filters')}`")
+            await ctx.send(f"🤖 **系统运行状态**:\n- 运行时间: {uptime:.0f}s\n- 当前监听链: Solana\n- 过滤器: `{config.get('filters')}`")
 
         @self.command(name="set_min_liq")
         async def _set_min_liq(ctx, value: int):
@@ -97,43 +84,45 @@ class DiscordBotNotifier(INotifier, commands.Bot):
             return
 
         channel = self.get_channel(int(self.channel_id))
-        if channel:
-            embed = discord.Embed(
-                title="🚀 发现新信号" if signal.security.lp_burned else "⚠️ 新池检测",
-                color=discord.Color.green() if signal.security.lp_burned else discord.Color.orange(),
-                timestamp=discord.utils.utcnow()
-            )
-            embed.add_field(name="Token", value=f"`{signal.token.symbol}`", inline=True)
-            embed.add_field(name="Chain", value=signal.chain.value.upper(), inline=True)
-            embed.add_field(name="Address", value=f"`{signal.token.address}`", inline=False)
-            embed.add_field(name="Security", value=(
-                f"Mint Revoked: {'✅' if signal.security.mint_revoked else '❌'}\n"
-                f"Freeze Revoked: {'✅' if signal.security.freeze_revoked else '❌'}\n"
-                f"LP Burned: {'✅' if signal.security.lp_burned else '❌'}"
-            ), inline=False)
-            embed.set_footer(text=f"Signal: {signal.signal_type.value}")
+        if not channel:
+            print(f"[WARN] Discord 频道不可用: {self.channel_id}")
+            return
+
+        embed = discord.Embed(
+            title="🚀 发现新信号" if signal.security.lp_burned else "⚠️ 新池检测",
+            color=discord.Color.green() if signal.security.lp_burned else discord.Color.orange(),
+            timestamp=discord.utils.utcnow()
+        )
+        embed.add_field(name="Token", value=f"`{signal.token.symbol}`", inline=True)
+        embed.add_field(name="Chain", value=signal.chain.value.upper(), inline=True)
+        embed.add_field(name="Address", value=f"`{signal.token.address}`", inline=False)
+        embed.add_field(name="Security", value=(
+            f"Mint Revoked: {'✅' if signal.security.mint_revoked else '❌'}\n"
+            f"Freeze Revoked: {'✅' if signal.security.freeze_revoked else '❌'}\n"
+            f"LP Burned: {'✅' if signal.security.lp_burned else '❌'}"
+        ), inline=False)
+        embed.set_footer(text=f"Signal: {signal.signal_type.value}")
+
+        try:
             await channel.send(embed=embed)
+        except Exception as e:
+            print(f"[ERROR] Discord 推送失败: {e}")
 
     async def start_bot(self):
-        if self.token:
-            print(f"[INFO] 正在尝试通过代理登录 Discord Bot...")
-            proxy = self._proxy_url
-            try:
-                if proxy:
-                    print(f"[INFO] 代理地址: {proxy}")
-                    from aiohttp_socks import ProxyConnector
-                    
-                    # discord.py 2.7.1 在 static_login() 中检查 self.connector
-                    # 设置为 ProxyConnector 后，DNS 也走代理
-                    self.http.connector = ProxyConnector.from_url(proxy)
-                    print(f"[INFO] 代理 Connector 已注入")
-                
-                await self.start(self.token)
-            except Exception as e:
-                print(f"[ERROR] Discord Bot 登录失败: {e}")
-                import traceback
-                traceback.print_exc()
-                if proxy:
-                    print(f"[TIP] 当前代理: {proxy}，请检查代理软件是否开启。")
-        else:
+        if not self.token:
             print("[WARN] Discord Token 为空，跳过启动")
+            return
+
+        proxy = self._proxy_url
+        try:
+            if proxy:
+                print(f"[INFO] 正在通过代理连接 Discord: {proxy}")
+                from aiohttp_socks import ProxyConnector
+                self.http.connector = ProxyConnector.from_url(proxy)
+                print("[INFO] 代理 Connector 已注入")
+
+            await self.start(self.token)
+        except Exception as e:
+            print(f"[ERROR] Discord Bot 登录失败: {e}")
+            import traceback
+            traceback.print_exc()
