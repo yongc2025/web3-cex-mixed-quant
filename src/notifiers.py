@@ -67,12 +67,13 @@ class DiscordBotNotifier(INotifier, commands.Bot):
         commands.Bot.__init__(self, command_prefix="!", intents=intents)
         self.channel_id = config.get("notifiers.discord.channel_id") or config.get("notifiers.discord_channel_id")
         self.token = token
+        self._proxy_url = config.get("app.proxy")
         self.start_time = asyncio.get_event_loop().time()
 
         # 注册事件
         @self.event
         async def on_ready():
-            print(f"[INFO] Discord Bot 已连接: {self.user.name} ({self.user.id})")
+            print(f"[INFO] ✅ Discord Bot 已连接: {self.user.name} ({self.user.id})")
 
         # 注册指令
         @self.command(name="status")
@@ -116,16 +117,43 @@ class DiscordBotNotifier(INotifier, commands.Bot):
     async def start_bot(self):
         if self.token:
             print(f"[INFO] 正在尝试通过代理登录 Discord Bot...")
-            proxy = config.get("app.proxy")
+            proxy = self._proxy_url
             try:
                 if proxy:
                     print(f"[INFO] 代理地址: {proxy}")
-                    # discord.py 内部 http client 有 _proxy 属性
-                    self.http._proxy = proxy
+                    import aiohttp
+                    
+                    # 用代理创建 connector，DNS 也走代理
+                    if proxy.startswith("socks"):
+                        from aiohttp_socks import ProxyConnector
+                        connector = ProxyConnector.from_url(proxy)
+                    else:
+                        # HTTP 代理：用 ProxyConnector 或手动设置
+                        try:
+                            from aiohttp_socks import ProxyConnector
+                            connector = ProxyConnector.from_url(proxy)
+                        except:
+                            connector = aiohttp.TCPConnector()
+                    
+                    # 劫持 discord.py 内部 session 创建
+                    original_init = type(self.http).__init__
+                    session_ref = [None]
+                    
+                    _proxy = proxy
+                    _connector = connector
+                    
+                    def patched_init(this, *args, **kwargs):
+                        original_init(this, *args, **kwargs)
+                        # 替换 session 为带代理的版本
+                        this._HTTPClient__session = aiohttp.ClientSession(connector=_connector)
+                    
+                    type(self.http).__init__ = patched_init
                 
                 await self.start(self.token)
             except Exception as e:
                 print(f"[ERROR] Discord Bot 登录失败: {e}")
+                import traceback
+                traceback.print_exc()
                 if proxy:
                     print(f"[TIP] 当前代理: {proxy}，请检查代理软件是否开启。")
         else:
