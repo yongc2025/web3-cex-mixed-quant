@@ -60,12 +60,12 @@ class DiscordBotNotifier(INotifier, commands.Bot):
         intents = discord.Intents.default()
         intents.message_content = True
         
-        # 调试信息
-        token = config.get("notifiers.discord_token") 
+        # 优先读 discord.bot_token，兼容 discord_token
+        token = config.get("notifiers.discord.bot_token") or config.get("notifiers.discord_token")
         print(f"[DEBUG] Discord 模块初始化，Token 存在: {bool(token)}")
         
         commands.Bot.__init__(self, command_prefix="!", intents=intents)
-        self.channel_id = config.get("notifiers.discord_channel_id")
+        self.channel_id = config.get("notifiers.discord.channel_id") or config.get("notifiers.discord_channel_id")
         self.token = token
         self.start_time = asyncio.get_event_loop().time()
 

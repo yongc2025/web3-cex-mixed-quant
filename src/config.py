@@ -42,7 +42,7 @@ class ConfigManager:
 
     def _create_default(self, path: str):
         default_conf = {
-            "app": {"debug": True},
+            "app": {"debug": True, "proxy": "http://127.0.0.1:10808"},
             "filters": {
                 "min_liquidity": 5000,
                 "require_mint_disabled": True,
