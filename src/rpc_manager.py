@@ -11,11 +11,9 @@ class RPCManager:
     """
     def __init__(self):
         # 默认内置一些知名的公共节点，也可从 config 加载自定义列表
-        self.nodes = config.get("rpc.nodes", [
+        self.nodes = config.get("rpc.nodes") or config.get("solana.rpc_endpoints", [
             "https://api.mainnet-beta.solana.com",
-            "https://solana-mainnet.g.allthatnode.com",
-            "https://rpc.ankr.com/solana",
-            "https://solana-api.projectserum.com"
+            "https://rpc.ankr.com/solana"
         ])
         self.current_idx = 0
 
